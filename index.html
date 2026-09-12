@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>고래야</title>
+  <style>
+    @font-face {
+      font-family: 'DungGeunMo';
+      src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/DungGeunMo.woff') format('woff');
+      font-weight: normal;
+      font-style: normal;
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: 'DungGeunMo', sans-serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #game-container {
+      position: relative;
+      width: 480px;
+      height: 640px;
+      border: 2px solid #333;
+      background-color: #ffffff;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    .screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background-color: #ffffff;
+      z-index: 10;
+    }
+
+    /* 비밀번호 화면 */
+    #pw-input {
+      font-size: 24px;
+      text-align: center;
+      padding: 8px;
+      width: 160px;
+      border: 2px solid #333;
+      outline: none;
+      margin-top: 15px;
+    }
+
+    /* 시작 화면 */
+    #start-title {
+      font-size: 48px;
+      margin-bottom: 30px;
+      letter-spacing: 2px;
+    }
+
+    .btn {
+      font-size: 20px;
+      padding: 10px 24px;
+      background-color: #ffffff;
+      border: 2px solid #333;
+      cursor: pointer;
+      transition: background-color 0.1s;
+    }
+
+    .btn:hover {
+      background-color: #eee;
+    }
+
+    /* 엔딩 화면 */
+    .ending-icon {
+      font-size: 40px;
+      margin-bottom: 10px;
+    }
+
+    #ending-img-container {
+      width: 150px;
+      height: 150px;
+      margin: 15px 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #ending-img-container img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    .ending-link {
+      font-size: 16px;
+      color: #0066cc;
+      word-break: break-all;
+      text-align: center;
+      padding: 0 20px;
+      text-decoration: underline;
+    }
+
+    /* 캔버스 */
+    canvas {
+      display: block;
+      background-color: #ffffff;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+
+<div id="game-container">
+  <!-- 1. 비밀번호 입력 화면 -->
+  <div id="pw-screen" class="screen">
+    <div style="font-size: 28px;">비밀번호?</div>
+    <input type="password" id="pw-input" autofocus maxlength="10">
+  </div>
+
+  <!-- 2. 시작 화면 -->
+  <div id="start-screen" class="screen hidden">
+    <div id="start-title">고래야</div>
+    <button id="start-btn" class="btn">시작</button>
+  </div>
+
+  <!-- 3. 게임 캔버스 -->
+  <canvas id="gameCanvas" width="480" height="640"></canvas>
+
+  <!-- 4. 엔딩 화면 -->
+  <div id="ending-screen" class="screen hidden">
+    <div id="ending-icons" class="ending-icon"></div>
+    <div id="ending-score" style="font-size: 22px; margin-bottom: 10px;"></div>
+    <div id="ending-img-container">
+      <img id="ending-img" src="img6.png" alt="Ending Image">
+    </div>
+    <a id="ending-link" class="ending-link" href="#" target="_blank">링크로 이동하기</a>
+  </div>
+</div>
+
+<script>
+  /*** 1. 오디오 자원 및 Web Audio API 설정 ***/
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  let audioCtx;
+
+  function initAudio() {
+    if (!audioCtx) {
+      audioCtx = new AudioContext();
+    }
+  }
+
+  // 효과음 생성기 (비밀번호 성공, 시작 버튼, 1분 알림, 30초 알림, 타임아웃)
+  function playBeep(type) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    const now = audioCtx.currentTime;
+
+    if (type === 'pw_success') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, now); // C5
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    } else if (type === 'button') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(400, now);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+      osc.start(now);
+      osc.stop(now + 0.08);
+    } else if (type === 'warn_60') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(600, now);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+      osc.start(now);
+      osc.stop(now + 0.2);
+    } else if (type === 'warn_30') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(800, now);
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    } else if (type === 'timeout') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.linearRampToValueAtTime(150, now + 0.4);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+      osc.start(now);
+      osc.stop(now + 0.4);
+    }
+  }
+
+  // BGM 음원 관리 (goraeya, burn)
+  const bgmGoraeya = new Audio('goraeya.mp3');
+  const bgmBurn = new Audio('burn.mp3');
+
+  function playBGM(type, loop = true) {
+    stopAllBGM();
+    if (type === 'goraeya') {
+      bgmGoraeya.currentTime = 0;
+      bgmGoraeya.loop = loop;
+      bgmGoraeya.play().catch(()=>{});
+    } else if (type === 'burn') {
+      bgmBurn.currentTime = 0;
+      bgmBurn.loop = loop;
+      bgmBurn.play().catch(()=>{});
+    }
+  }
+
+  function stopAllBGM() {
+    bgmGoraeya.pause();
+    bgmGoraeya.currentTime = 0;
+    bgmBurn.pause();
+    bgmBurn.currentTime = 0;
+  }
+
+
+  /*** 2. 이미지 에셋 로드 및 크기 설정 ***/
+  const images = {};
+  const imageSources = {
+    img1: 'img1.png',
+    img2: 'img2.png',
+    img3: 'img3.png',
+    fish: 'img4.png',  // 하늘색 생선
+    whale: 'img5.png'  // 남색 고래
+  };
+
+  for (let key in imageSources) {
+    images[key] = new Image();
+    images[key].src = imageSources[key];
+  }
+
+  // 수정 반영: 적절하게 줄인 요소별 렌더링 크기 설정
+  const SIZES = {
+    player: { width: 55, height: 55 }, // 캐릭터 기존보다 슬림하게 조정
+    fish:   { width: 35, height: 35 }, // 생선 크기 상향/하향 밸런스 조정 (지나가기 가능)
+    whale:  { width: 48, height: 48 }  // 고래 아이템 크기
+  };
+
+
+  /*** 3. 게임 DOM 및 변수 ***/
+  const pwScreen = document.getElementById('pw-screen');
+  const pwInput = document.getElementById('pw-input');
+  const startScreen = document.getElementById('start-screen');
+  const startBtn = document.getElementById('start-btn');
+  const endingScreen = document.getElementById('ending-screen');
+  const endingIcons = document.getElementById('ending-icons');
+  const endingScore = document.getElementById('ending-score');
+  const endingLink = document.getElementById('ending-link');
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let gameState = 'PW'; // PW, START, PLAYING, GAMEOVER
+  let score = 0;
+  let timeRemaining = 120; // 2분 (초)
+  let lastTime = 0;
+  let timerAccumulator = 0;
+
+  let warn60Played = false;
+  let warn30Played = false;
+
+  // 플레이어 상태
+  let player = {
+    x: canvas.width / 2 - SIZES.player.width / 2,
+    y: canvas.height - SIZES.player.height - 20,
+    width: SIZES.player.width,
+    height: SIZES.player.height,
+    speed: 6,
+    isBurnState: false,
+    animTimer: 0,
+    currentImg: 1
+  };
+
+  // 키보드 조작
+  const keys = { Left: false, Right: false, Up: false, Down: false };
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.Left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.Right = true;
+    if (e.key === 'ArrowUp' || e.key === 'w') keys.Up = true;
+    if (e.key === 'ArrowDown' || e.key === 's') keys.Down = true;
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.Left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.Right = false;
+    if (e.key === 'ArrowUp' || e.key === 'w') keys.Up = false;
+    if (e.key === 'ArrowDown' || e.key === 's') keys.Down = false;
+  });
+
+  // 떨어지는 장애물/아이템 및 팝업 점수 텍스트
+  let fallingObjects = [];
+  let scorePopups = [];
+  let spawnTimer = 0;
+
+  // 비밀번호 검증
+  pwInput.addEventListener('input', () => {
+    if (pwInput.value === '1205') {
+      initAudio();
+      playBeep('pw_success');
+      pwScreen.classList.add('hidden');
+      startScreen.classList.remove('hidden');
+      gameState = 'START';
+    }
+  });
+
+  // 게임 시작 버튼
+  startBtn.addEventListener('click', () => {
+    initAudio();
+    playBeep('button');
+    startScreen.classList.add('hidden');
+    resetGame();
+    gameState = 'PLAYING';
+    playBGM('goraeya', true);
+    requestAnimationFrame(gameLoop);
+  });
+
+  function resetGame() {
+    score = 0;
+    timeRemaining = 120;
+    timerAccumulator = 0;
+    warn60Played = false;
+    warn30Played = false;
+    fallingObjects = [];
+    scorePopups = [];
+    player.x = canvas.width / 2 - player.width / 2;
+    player.y = canvas.height - player.height - 20;
+    player.isBurnState = false;
+    player.animTimer = 0;
+    player.currentImg = 1;
+    lastTime = performance.now();
+  }
+
+
+  /*** 4. 메인 게임 루프 및 업데이트 ***/
+  function gameLoop(now) {
+    if (gameState !== 'PLAYING') return;
+
+    const dt = (now - lastTime) / 1000;
+    lastTime = now;
+
+    update(dt);
+    render();
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  function update(dt) {
+    // 1) 타이머 및 알림음 처리
+    timerAccumulator += dt;
+    if (timerAccumulator >= 1.0) {
+      timeRemaining -= 1;
+      timerAccumulator -= 1.0;
+      score += 2; // 생존 1초당 2점 누적
+    }
+
+    if (timeRemaining === 60 && !warn60Played) {
+      playBeep('warn_60');
+      warn60Played = true;
+    }
+    if (timeRemaining === 30 && !warn30Played) {
+      playBeep('warn_30');
+      warn30Played = true;
+    }
+
+    if (timeRemaining <= 0) {
+      timeRemaining = 0;
+      triggerTimeOut();
+      return;
+    }
+
+    // 2) 캐릭터 애니메이션 처리 (0.8초 주기 switching = 1초보다 살짝 빠르게)
+    player.animTimer += dt;
+    if (player.animTimer >= 0.4) {
+      player.animTimer = 0;
+      player.currentImg = player.currentImg === 1 ? 2 : 1;
+    }
+
+    // 3) 캐릭터 이동
+    if (keys.Left && player.x > 0) player.x -= player.speed;
+    if (keys.Right && player.x < canvas.width - player.width) player.x += player.speed;
+    if (keys.Up && player.y > 0) player.y -= player.speed;
+    if (keys.Down && player.y < canvas.height - player.height) player.y += player.speed;
+
+    // 4) 장애물/아이템 생성 (생선 다수, 남색 고래 가끔)
+    spawnTimer += dt;
+    if (spawnTimer >= 0.28) { // 스폰 빈도
+      spawnTimer = 0;
+      const isWhale = Math.random() < 0.12; // 12% 확률로 남색 고래 생성
+      const size = isWhale ? SIZES.whale : SIZES.fish;
+
+      fallingObjects.push({
+        type: isWhale ? 'whale' : 'fish',
+        x: Math.random() * (canvas.width - size.width),
+        y: -size.height,
+        width: size.width,
+        height: size.height,
+        speed: 3 + Math.random() * 3.5
+      });
+    }
+
+    // 5) 장애물 이동 및 충돌 처리
+    for (let i = fallingObjects.length - 1; i >= 0; i--) {
+      let obj = fallingObjects[i];
+      obj.y += obj.speed;
+
+      // 판정 개선: 누끼 여백을 감안한 80% 히트박스 적용
+      if (checkCollision(player, obj, 0.8)) {
+        if (obj.type === 'fish') {
+          // 생선에 닿음 -> burn 상태 전환
+          if (!player.isBurnState) {
+            player.isBurnState = true;
+            playBGM('burn', true);
+          }
+        } else if (obj.type === 'whale') {
+          // 고래에 닿음 -> goraeya 상태 복구 및 보너스 점수
+          const bonusScore = 25;
+          score += bonusScore;
+
+          // 보너스 팝업 생성 (캐릭터 머리 위)
+          scorePopups.push({
+            text: `+${bonusScore}`,
+            x: player.x + player.width / 2,
+            y: player.y - 10,
+            alpha: 1.0,
+            life: 0.8
+          });
+
+          if (player.isBurnState) {
+            player.isBurnState = false;
+            playBGM('goraeya', true);
+          }
+        }
+        fallingObjects.splice(i, 1);
+        continue;
+      }
+
+      // 화면 아래로 벗어나면 삭제
+      if (obj.y > canvas.height) {
+        fallingObjects.splice(i, 1);
+      }
+    }
+
+    // 6) 점수 팝업 애니메이션 처리
+    for (let i = scorePopups.length - 1; i >= 0; i--) {
+      let pop = scorePopups[i];
+      pop.y -= 30 * dt;
+      pop.life -= dt;
+      pop.alpha = Math.max(0, pop.life / 0.8);
+      if (pop.life <= 0) {
+        scorePopups.splice(i, 1);
+      }
+    }
+  }
+
+
+  /*** 5. 히트박스 판정 함수 ***/
+  function checkCollision(r1, r2, scale = 0.8) {
+    const w1 = r1.width * scale;
+    const h1 = r1.height * scale;
+    const x1 = r1.x + (r1.width - w1) / 2;
+    const y1 = r1.y + (r1.height - h1) / 2;
+
+    const w2 = r2.width * scale;
+    const h2 = r2.height * scale;
+    const x2 = r2.x + (r2.width - w2) / 2;
+    const y2 = r2.y + (r2.height - h2) / 2;
+
+    return !(x1 > x2 + w2 || x1 + w1 < x2 || y1 > y2 + h2 || y1 + h1 < y2);
+  }
+
+
+  /*** 6. 렌더링 (PNG 원본 색상 및 알파 보정) ***/
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 이미지 품질 보정
+    ctx.imageSmoothingEnabled = true;
+
+    // 1) 타이머 및 점수 표시 (상단)
+    ctx.fillStyle = '#000000';
+    ctx.font = '20px DungGeunMo';
+    ctx.textAlign = 'left';
+    ctx.fillText(`TIME: ${formatTime(timeRemaining)}`, 15, 30);
+
+    ctx.textAlign = 'right';
+    ctx.fillText(`SCORE: ${score}`, canvas.width - 15, 30);
+
+    // 2) 떨어지는 객체 그리기 (생선 / 남색 고래)
+    fallingObjects.forEach(obj => {
+      const img = obj.type === 'fish' ? images.fish : images.whale;
+      if (img.complete) {
+        ctx.drawImage(img, obj.x, obj.y, obj.width, obj.height);
+      }
+    });
+
+    // 3) 캐릭터 그리기
+    let currentCharacterImg;
+    if (player.isBurnState) {
+      currentCharacterImg = images.img3; // 불탔을 때 (3번)
+    } else {
+      currentCharacterImg = player.currentImg === 1 ? images.img1 : images.img2; // 평소 (1번/2번 번갈아)
+    }
+
+    if (currentCharacterImg && currentCharacterImg.complete) {
+      ctx.drawImage(currentCharacterImg, player.x, player.y, player.width, player.height);
+    }
+
+    // 4) 보너스 점수 팝업 텍스트 그리기
+    scorePopups.forEach(pop => {
+      ctx.save();
+      ctx.globalAlpha = pop.alpha;
+      ctx.fillStyle = '#0088ff';
+      ctx.font = 'bold 18px DungGeunMo';
+      ctx.textAlign = 'center';
+      ctx.fillText(pop.text, pop.x, pop.y);
+      ctx.restore();
+    });
+  }
+
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+
+  /*** 7. 타임아웃 및 엔딩 처리 ***/
+  function triggerTimeOut() {
+    gameState = 'GAMEOVER';
+    playBeep('timeout');
+
+    // 화면 정지 텍스트 렌더링
+    render();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#ff0000';
+    ctx.font = '40px DungGeunMo';
+    ctx.textAlign = 'center';
+    ctx.fillText('타임아웃!', canvas.width / 2, canvas.height / 2);
+
+    setTimeout(() => {
+      showEnding();
+    }, 1500);
+  }
+
+  function showEnding() {
+    endingScreen.classList.remove('hidden');
+
+    if (score >= 125) {
+      // 125점 이상 성공
+      endingIcons.textContent = '🐳🐳🐳';
+      endingScore.textContent = `최종 점수: ${score}점 (성공!)`;
+      endingLink.href = 'https://youtu.be/kQUP6xD7E6E?feature=shared';
+      endingLink.textContent = 'https://youtu.be/kQUP6xD7E6E';
+      playBGM('goraeya', false); // 1회만 재생
+    } else {
+      // 125점 미만 실패
+      endingIcons.textContent = '🔥🔥🔥';
+      endingScore.textContent = `최종 점수: ${score}점 (실패)`;
+      endingLink.href = 'https://youtu.be/7-xyGAe6j3A?feature=shared';
+      endingLink.textContent = 'https://youtu.be/7-xyGAe6j3A';
+      playBGM('burn', false); // 1회만 재생
+    }
+  }
+</script>
+</body>
+</html>
